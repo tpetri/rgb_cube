@@ -57,8 +57,9 @@ all:			$(FIRMWARE_BUNDLE)
 $(FIRMWARE_BUNDLE):	$(FIRMWARE_BINARY) $(MKFW) $(FIRMWARE_PROTOTYPE)
 	@echo Generating $@
 	@$(MKFW) --prototype $(FIRMWARE_PROTOTYPE) \
-		--git_identity $(PX4BASE) \
 		--image $(FIRMWARE_BINARY) > $@
+
+#--git_identity $(PX4BASE) \
 #
 # Build the firmware binary.
 #

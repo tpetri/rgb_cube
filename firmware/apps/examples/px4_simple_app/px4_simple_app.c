@@ -42,74 +42,74 @@
 #include <stdio.h>
 #include <poll.h>
 
-#include <uORB/uORB.h>
-#include <uORB/topics/sensor_combined.h>
-#include <uORB/topics/vehicle_attitude.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <debug.h>
+#include <time.h>
+#include <unistd.h>
 
-__EXPORT int ledtest(int argc, char *argv[]);
+#include <arch/board/board.h>
+#include <arch/board/up_hrt.h>
+#include <arch/board/drv_tone_alarm.h>
 
-int ledtest(int argc, char *argv[])
+__EXPORT int ledtest_main(int argc, char *argv[]);
+
+int ledtest_main(int argc, char *argv[])
 {
 	printf("Hello Sky!\n");
 
-	/* subscribe to sensor_combined topic */
-	int sensor_sub_fd = orb_subscribe(ORB_ID(sensor_combined));
-	orb_set_interval(sensor_sub_fd, 1000);
+#ifdef CONFIG_TONE_ALARM
+	int fd, result;
+	unsigned long tone;
 
-	/* advertise attitude topic */
-	struct vehicle_attitude_s att;
-	memset(&att, 0, sizeof(att));
-	int att_pub_fd = orb_advertise(ORB_ID(vehicle_attitude), &att);
+	fd = open("/dev/tone_alarm", O_WRONLY);
 
-	/* one could wait for multiple topics with this technique, just using one here */
-	struct pollfd fds[] = {
-		{ .fd = sensor_sub_fd,   .events = POLLIN },
-		/* there could be more file descriptors here, in the form like:
-		 * { .fd = other_sub_fd,   .events = POLLIN },
-		 */
-	};
+	if (fd < 0) {
+		printf("failed opening /dev/tone_alarm\n");
+		goto out;
+	}
 
-	int error_counter = 0;
+	tone = 1;
 
-	while (true) {
-		/* wait for sensor update of 1 file descriptor for 1000 ms (1 second) */
-		int poll_ret = poll(fds, 1, 1000);
-	 
-		/* handle the poll result */
-		if (poll_ret == 0) {
-			/* this means none of our providers is giving us data */
-			printf("[px4_simple_app] Got no data within a second\n");
-		} else if (poll_ret < 0) {
-			/* this is seriously bad - should be an emergency */
-			if (error_counter < 10 || error_counter % 50 == 0) {
-				/* use a counter to prevent flooding (and slowing us down) */
-				printf("[px4_simple_app] ERROR return value from poll(): %d\n"
-					, poll_ret);
-			}
-			error_counter++;
+	if (argc == 2)
+		tone = atoi(argv[1]);
+
+	if (tone  == 0) {
+		result = ioctl(fd, TONE_SET_ALARM, 0);
+
+		if (result < 0) {
+			printf("failed clearing alarms\n");
+			goto out;
+
 		} else {
-	 
-			if (fds[0].revents & POLLIN) {
-				/* obtained data for the first file descriptor */
-				struct sensor_combined_s raw;
-				/* copy sensors raw data into local buffer */
-				orb_copy(ORB_ID(sensor_combined), sensor_sub_fd, &raw);
-				printf("[px4_simple_app] Accelerometer:\t%8.4f\t%8.4f\t%8.4f\n",
-					(double)raw.accelerometer_m_s2[0],
-					(double)raw.accelerometer_m_s2[1],
-					(double)raw.accelerometer_m_s2[2]);
+			printf("Alarm stopped.\n");
+		}
 
-				/* set att and publish this information for other apps */
-				att.roll = raw.accelerometer_m_s2[0];
-				att.pitch = raw.accelerometer_m_s2[1];
-				att.yaw = raw.accelerometer_m_s2[2];
-				orb_publish(ORB_ID(vehicle_attitude), att_pub_fd, &att);
-			}
-			/* there could be more file descriptors here, in the form like:
-			 * if (fds[1..n].revents & POLLIN) {}
-			 */
+	} else {
+		result = ioctl(fd, TONE_SET_ALARM, 0);
+
+		if (result < 0) {
+			printf("failed clearing alarms\n");
+			goto out;
+		}
+
+		result = ioctl(fd, TONE_SET_ALARM, tone);
+
+		if (result < 0) {
+			printf("failed setting alarm %lu\n", tone);
+
+		} else {
+			printf("Alarm %lu (disable with: tests tone 0)\n", tone);
 		}
 	}
 
+out:
+
+	if (fd >= 0)
+		close(fd);
+
+#endif
+	return 0;
 	return 0;
 }

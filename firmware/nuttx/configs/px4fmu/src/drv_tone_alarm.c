@@ -1,6 +1,5 @@
-/****************************************************************************
- *
- *   Copyright (C) 2012 PX4 Development Team. All rights reserved.
+/*
+ *   Copyright (C) 2012 Michael Smith. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -12,7 +11,7 @@
  *    notice, this list of conditions and the following disclaimer in
  *    the documentation and/or other materials provided with the
  *    distribution.
- * 3. Neither the name PX4 nor the names of its contributors may be
+ * 3. Neither the name of the author or the names of contributors may be
  *    used to endorse or promote products derived from this software
  *    without specific prior written permission.
  *
@@ -28,8 +27,7 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
  * ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- *
- ****************************************************************************/
+ */
 
 /*
  * Speaker driver supporting alarm sequences.
@@ -67,7 +65,7 @@
 #include "stm32_gpio.h"
 #include "stm32_tim.h"
 
-#ifdef CONFIG_TONE_ALARM
+//#ifdef CONFIG_TONE_ALARM
 # ifndef CONFIG_HRT_TIMER
 #  error CONFIG_TONE_ALARM requires CONFIG_HRT_TIMER
 # endif
@@ -77,6 +75,7 @@
 # define TONE_ALARM_BASE		STM32_TIM2_BASE
 # define TONE_ALARM_CLOCK		STM32_APB1_TIM2_CLKIN
 # define TONE_ALARM_CLOCK_ENABLE	RCC_APB1ENR_TIM2EN
+# define TONE_ALARM_TIMER_VECTOR	STM32_IRQ_TIM2
 # ifdef CONFIG_STM32_TIM2
 #  error Must not set CONFIG_STM32_TIM2 when TONE_ALARM_TIMER is 2
 # endif
@@ -84,6 +83,7 @@
 # define TONE_ALARM_BASE		STM32_TIM3_BASE
 # define TONE_ALARM_CLOCK		STM32_APB1_TIM3_CLKIN
 # define TONE_ALARM_CLOCK_ENABLE	RCC_APB1ENR_TIM3EN
+# define TONE_ALARM_TIMER_VECTOR	STM32_IRQ_TIM3
 # ifdef CONFIG_STM32_TIM3
 #  error Must not set CONFIG_STM32_TIM3 when TONE_ALARM_TIMER is 3
 # endif
@@ -91,6 +91,7 @@
 # define TONE_ALARM_BASE		STM32_TIM4_BASE
 # define TONE_ALARM_CLOCK		STM32_APB1_TIM4_CLKIN
 # define TONE_ALARM_CLOCK_ENABLE	RCC_APB1ENR_TIM4EN
+# define TONE_ALARM_TIMER_VECTOR	STM32_IRQ_TIM4
 # ifdef CONFIG_STM32_TIM4
 #  error Must not set CONFIG_STM32_TIM4 when TONE_ALARM_TIMER is 4
 # endif
@@ -98,6 +99,7 @@
 # define TONE_ALARM_BASE		STM32_TIM5_BASE
 # define TONE_ALARM_CLOCK		STM32_APB1_TIM5_CLKIN
 # define TONE_ALARM_CLOCK_ENABLE	RCC_APB1ENR_TIM5EN
+# define TONE_ALARM_TIMER_VECTOR	STM32_IRQ_TIM5
 # ifdef CONFIG_STM32_TIM5
 #  error Must not set CONFIG_STM32_TIM5 when TONE_ALARM_TIMER is 5
 # endif
@@ -105,6 +107,7 @@
 # define TONE_ALARM_BASE		STM32_TIM9_BASE
 # define TONE_ALARM_CLOCK		STM32_APB1_TIM9_CLKIN
 # define TONE_ALARM_CLOCK_ENABLE	RCC_APB1ENR_TIM9EN
+# define TONE_ALARM_TIMER_VECTOR	STM32_IRQ_TIM9
 # ifdef CONFIG_STM32_TIM9
 #  error Must not set CONFIG_STM32_TIM9 when TONE_ALARM_TIMER is 9
 # endif
@@ -112,6 +115,7 @@
 # define TONE_ALARM_BASE		STM32_TIM10_BASE
 # define TONE_ALARM_CLOCK		STM32_APB1_TIM10_CLKIN
 # define TONE_ALARM_CLOCK_ENABLE	RCC_APB1ENR_TIM10EN
+# define TONE_ALARM_TIMER_VECTOR	STM32_IRQ_TIM10
 # ifdef CONFIG_STM32_TIM10
 #  error Must not set CONFIG_STM32_TIM10 when TONE_ALARM_TIMER is 10
 # endif
@@ -119,6 +123,7 @@
 # define TONE_ALARM_BASE		STM32_TIM11_BASE
 # define TONE_ALARM_CLOCK		STM32_APB1_TIM11_CLKIN
 # define TONE_ALARM_CLOCK_ENABLE	RCC_APB1ENR_TIM11EN
+# define TONE_ALARM_TIMER_VECTOR	STM32_IRQ_TIM11
 # ifdef CONFIG_STM32_TIM11
 #  error Must not set CONFIG_STM32_TIM11 when TONE_ALARM_TIMER is 11
 # endif
@@ -131,21 +136,25 @@
 # define TONE_CCMR2	0
 # define TONE_CCER	(1 << 0)
 # define TONE_rCCR	rCCR1
+# define TONE_ONEBITWAVE_INT GTIM_DIER_CC1IE
 #elif TONE_ALARM_CHANNEL == 2
 # define TONE_CCMR1	(3 << 12)
 # define TONE_CCMR2	0
 # define TONE_CCER	(1 << 4)
 # define TONE_rCCR	rCCR2
+# define TONE_ONEBITWAVE_INT GTIM_DIER_CC2IE
 #elif TONE_ALARM_CHANNEL == 3
 # define TONE_CCMR1	0
 # define TONE_CCMR2	(3 << 4)
 # define TONE_CCER	(1 << 8)
 # define TONE_rCCR	rCCR3
+# define TONE_ONEBITWAVE_INT GTIM_DIER_CC3IE
 #elif TONE_ALARM_CHANNEL == 4
 # define TONE_CCMR1	0
 # define TONE_CCMR2	(3 << 12)
 # define TONE_CCER	(1 << 12)
 # define TONE_rCCR	rCCR4
+# define TONE_ONEBITWAVE_INT GTIM_DIER_CC4IE
 #else
 # error Must set TONE_ALARM_CHANNEL to a value between 1 and 4
 #endif
@@ -290,6 +299,16 @@ static uint16_t notes[TONE_NOTE_MAX] = {
 	4218  /* D#8/Eb8 */
 };
 
+/* #include "drv_tone_alarm_wave.pxw" this is for petris testing purposes 1-bit original gameboy tetris sound */
+static const uint8_t onebitwave[] = { 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF,
+		                               0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF,
+		                               0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF,
+		                               0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF,
+		                               0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF,
+		                               0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF,
+		                               0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF,
+		                               0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF, 0xF};
+
 /* current state of the tone driver */
 struct state {
 	int		pattern;				/* current pattern */
@@ -312,6 +331,75 @@ static const struct file_operations tone_fops = {
 
 static void	tone_next(void);
 static bool	tone_ok(struct tone_note *pattern);
+
+static uint8_t red = 255;
+static uint8_t green = 0;
+static uint8_t blue = 255;
+static uint8_t pwm_cycle = 0;
+static uint8_t clk = 0;
+
+static int
+tone_tim_isr(int irq, void *context)
+{
+	uint32_t status;
+
+	/* copy interrupt status */
+	status = rSR;
+
+	/* ack the interrupts we just read */
+	rSR = ~status;
+
+	/* was this a timer tick? */
+	if (status & GTIM_SR_CC3IF)
+	{
+		if (clk) //set new input just before the clock will rise
+		{
+			if (tone_state.note % 8 == 0)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE3, 0); //disable latch until we have sent all bits
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, red > pwm_cycle);
+			}
+			else if (tone_state.note % 8 == 1)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, green > pwm_cycle);
+			}
+			else if (tone_state.note % 8 == 2)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, blue > pwm_cycle);
+			}
+			else if (tone_state.note % 8 == 3)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
+			}
+			else if (tone_state.note % 8 == 4)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
+			}
+			else if (tone_state.note % 8 == 5)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
+			}
+			else if (tone_state.note % 8 == 6)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
+			}
+			else if (tone_state.note % 8 == 7)
+			{
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
+				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE3, 1); //enable latch if we sent the last bit
+			}
+			tone_state.note++;
+			pwm_cycle++;
+		}
+
+		stm32_gpiowrite(GPIO_TONE_ALARM_WAVE, clk);
+		clk = !clk;
+	}
+
+	return OK;
+}
+
+
 int
 tone_alarm_init(void)
 {
@@ -319,38 +407,44 @@ tone_alarm_init(void)
 	stm32_configgpio(GPIO_TONE_ALARM);
 
 	/* clock/power on our timer */
-        modifyreg32(STM32_RCC_APB1ENR, 0, TONE_ALARM_CLOCK_ENABLE);
+	modifyreg32(STM32_RCC_APB1ENR, 0, TONE_ALARM_CLOCK_ENABLE);
+
+	/* claim our interrupt vector */
+	irq_attach(TONE_ALARM_TIMER_VECTOR, tone_tim_isr);
+
+	/* enable interrupts */
+	up_enable_irq(TONE_ALARM_TIMER_VECTOR);
 
 	/* default the state */
 	tone_state.pattern = -1;
 
 	/* initialise the timer */
-        rCR1 = 0;
-        rCR2 = 0;
-        rSMCR = 0;
-        rDIER = 0;
-        rCCER = 0;		/* unlock CCMR* registers */
-        rCCMR1 = TONE_CCMR1;
-        rCCMR2 = TONE_CCMR2;
-        rCCER = TONE_CCER;
-        rDCR = 0;
+	rCR1 = 0;
+	rCR2 = 0;
+	rSMCR = 0;
+	rDIER = 0;
+	rCCER = 0;		/* unlock CCMR* registers */
+	rCCMR1 = TONE_CCMR1;
+	rCCMR2 = TONE_CCMR2;
+	rCCER = TONE_CCER;
+	rDCR = 0;
 
-        /* toggle the CC output each time the count passes 1 */
-        TONE_rCCR = 1;
+	/* toggle the CC output each time the count passes 1 */
+	TONE_rCCR = 1;
 
-        /* 
-         * Configure the timebase to free-run at half max frequency.
-         * XXX this should be more flexible in order to get a better
-         * frequency range, but for the F4 with the APB1 timers based
-         * at 42MHz, this gets us down to ~320Hz or so.
-         */
-        rPSC = 1;
+	/*
+	 * Configure the timebase to free-run at half max frequency.
+	 * XXX this should be more flexible in order to get a better
+	 * frequency range, but for the F4 with the APB1 timers based
+	 * at 42MHz, this gets us down to ~320Hz or so.
+	 */
+	rPSC = 1;
 
-        tone_state.pattern = PATTERN_NONE;
-        tone_state.note = 0;
+	tone_state.pattern = 1;
+	tone_state.note = 0;
 
 	/* play the startup tune */
-    tone_ioctl(NULL, TONE_SET_ALARM, 1);
+	tone_next();
 
 	/* register the device */
 	return register_driver("/dev/tone_alarm", &tone_fops, 0666, NULL);
@@ -371,17 +465,29 @@ tone_ioctl(struct file *filep, int cmd, unsigned long arg)
 			/* cancel any current alarm */
 			tone_state.pattern = PATTERN_NONE;
 			tone_next();
-
-		} else if (new > TONE_MAX_PATTERN) {
-
+		} else if (new > TONE_MAX_PATTERN+1) {
 			/* not a legal alarm value */
 			result = -ERANGE;
-
+		} else if (new == TONE_MAX_PATTERN+1) {
+			/* settings for 1-bit wave */
+			rCR1 = 0;
+			stm32_configgpio(GPIO_TONE_ALARM_WAVE);
+			stm32_configgpio(GPIO_TONE_ALARM_WAVE2);
+			stm32_configgpio(GPIO_TONE_ALARM_WAVE3);
+			rDIER = TONE_ONEBITWAVE_INT;
+			rPSC = 1000;//TONE_ALARM_CLOCK / 44100;
+			rARR = 0x1;
+			rEGR = GTIM_EGR_UG;
+			rCR1 = GTIM_CR1_CEN;
 		} else if (new > tone_state.pattern) {
-
 			/* higher priority than the current alarm */
 			tone_state.pattern = new;
 			tone_state.note = 0;
+
+			rCR1 = 0;
+			stm32_configgpio(GPIO_TONE_ALARM);
+			rDIER = 0;
+			rPSC = 1;
 
 			/* and start playing it */
 			tone_next();
@@ -475,16 +581,15 @@ tone_next(void)
 		/* set reload based on the pitch */
 		rARR = notes[np->pitch];
 
-	        /* force an update, reloads the counter and all registers */
-	        rEGR = GTIM_EGR_UG;
+		/* force an update, reloads the counter and all registers */
+		rEGR = GTIM_EGR_UG;
 
-	        /* start the timer */
-	        rCR1 = GTIM_CR1_CEN;
+		/* start the timer */
+		rCR1 = GTIM_CR1_CEN;
 	}
 
 	/* arrange a callback when the note/rest is done */
 	hrt_call_after(&tone_state.note_end, (hrt_abstime)10000 * np->duration, (hrt_callout)tone_next, NULL);
-
 }
 
 static bool
@@ -508,4 +613,4 @@ tone_ok(struct tone_note *pattern)
 	return true;
 }
 
-#endif /* CONFIG_TONE_ALARM */
+//#endif /* CONFIG_TONE_ALARM */
