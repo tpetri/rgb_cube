@@ -186,6 +186,10 @@
 #define TONE_MAX_PATTERN	6
 #define TONE_MAX_PATTERN_LEN	40
 
+# define GPIO_MOSFET1	(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN8)
+# define GPIO_MOSFET2	(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN9)
+# define GPIO_MOSFET3	(GPIO_OUTPUT|GPIO_PUSHPULL|GPIO_SPEED_2MHz|GPIO_OUTPUT_CLEAR|GPIO_PORTB|GPIO_PIN9)
+
 /* predefined patterns for alarms 1-TONE_MAX_PATTERN */
 const struct tone_note patterns[TONE_MAX_PATTERN][TONE_MAX_PATTERN_LEN] = {
 	{
@@ -332,11 +336,14 @@ static const struct file_operations tone_fops = {
 static void	tone_next(void);
 static bool	tone_ok(struct tone_note *pattern);
 
-static uint8_t red = 255;
-static uint8_t green = 0;
-static uint8_t blue = 255;
+static uint8_t red[8*8*8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t green[8*8*8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t blue[8*8*8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
 static uint8_t pwm_cycle = 0;
 static uint8_t clk = 0;
+static uint16_t dir = 0;
+static uint8_t layer = 0;
+static uint8_t bit = 0;
 
 static int
 tone_tim_isr(int irq, void *context)
@@ -352,48 +359,85 @@ tone_tim_isr(int irq, void *context)
 	/* was this a timer tick? */
 	if (status & GTIM_SR_CC3IF)
 	{
-		if (clk) //set new input just before the clock will rise
+		stm32_gpiowrite(GPIO_TONE_ALARM_WAVE, 0);	//clk
+
+		if (layer == 0)
 		{
-			if (tone_state.note % 8 == 0)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE3, 0); //disable latch until we have sent all bits
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, red > pwm_cycle);
-			}
-			else if (tone_state.note % 8 == 1)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, green > pwm_cycle);
-			}
-			else if (tone_state.note % 8 == 2)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, blue > pwm_cycle);
-			}
-			else if (tone_state.note % 8 == 3)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
-			}
-			else if (tone_state.note % 8 == 4)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
-			}
-			else if (tone_state.note % 8 == 5)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
-			}
-			else if (tone_state.note % 8 == 6)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
-			}
-			else if (tone_state.note % 8 == 7)
-			{
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, 1);
-				stm32_gpiowrite(GPIO_TONE_ALARM_WAVE3, 1); //enable latch if we sent the last bit
-			}
-			tone_state.note++;
-			pwm_cycle++;
+			stm32_gpiowrite(GPIO_MOSFET1, 1);
+			stm32_gpiowrite(GPIO_MOSFET2, 1);
+			stm32_gpiowrite(GPIO_MOSFET3, 1);
+		}
+		else if (layer == 1)
+		{
+			stm32_gpiowrite(GPIO_MOSFET1, 1);
+			stm32_gpiowrite(GPIO_MOSFET2, 0);
+			stm32_gpiowrite(GPIO_MOSFET3, 1);
+		}
+		else if (layer == 2)
+		{
+			stm32_gpiowrite(GPIO_MOSFET1, 1);
+			stm32_gpiowrite(GPIO_MOSFET2, 1);
+			stm32_gpiowrite(GPIO_MOSFET3, 1);
+		}
+		else
+		{
+			stm32_gpiowrite(GPIO_MOSFET1, 1);
+			stm32_gpiowrite(GPIO_MOSFET2, 1);
+			stm32_gpiowrite(GPIO_MOSFET3, 1);
 		}
 
-		stm32_gpiowrite(GPIO_TONE_ALARM_WAVE, clk);
-		clk = !clk;
+		if (bit == 0)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE3, 0); //disable latch until we have sent all bits
+
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, red[layer]/4 > pwm_cycle);
+		}
+		else if (bit == 1)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, red[layer]/4 > pwm_cycle);
+		}
+		else if (bit == 2)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, green[layer]/4 > pwm_cycle);
+		}
+		else if (bit == 3)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, blue[layer]/4 > pwm_cycle);
+		}
+		else if (bit == 4)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, green[layer]/4 > pwm_cycle);
+		}
+		else if (bit == 5)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, blue[layer]/4 > pwm_cycle);
+		}
+		else if (bit == 6)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, red[layer]/4 > pwm_cycle);
+		}
+		else if (bit == 7)
+		{
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE2, red[layer]/4 > pwm_cycle);
+
+			stm32_gpiowrite(GPIO_TONE_ALARM_WAVE3, 1); //enable latch if we sent the last bit
+		}
+
+		bit++;
+		if (bit == 8)
+		{
+			bit = 0;
+			pwm_cycle++;
+			if (pwm_cycle == 64) pwm_cycle = 0;
+		}
+
+		stm32_gpiowrite(GPIO_TONE_ALARM_WAVE, 1);	//clk
+
+
+
+
+		if (bit == 0) layer++;
+		if (layer == 8) layer = 0;
 	}
 
 	return OK;
@@ -474,11 +518,20 @@ tone_ioctl(struct file *filep, int cmd, unsigned long arg)
 			stm32_configgpio(GPIO_TONE_ALARM_WAVE);
 			stm32_configgpio(GPIO_TONE_ALARM_WAVE2);
 			stm32_configgpio(GPIO_TONE_ALARM_WAVE3);
+			stm32_configgpio(GPIO_MOSFET1);
+			stm32_configgpio(GPIO_MOSFET2);
+			stm32_configgpio(GPIO_MOSFET3);
+			stm32_gpiowrite(GPIO_MOSFET1, 1);
+			stm32_gpiowrite(GPIO_MOSFET2, 1);
+			stm32_gpiowrite(GPIO_MOSFET3, 1);
 			rDIER = TONE_ONEBITWAVE_INT;
-			rPSC = 1000;//TONE_ALARM_CLOCK / 44100;
+			rPSC = TONE_ALARM_CLOCK / 122880;
 			rARR = 0x1;
 			rEGR = GTIM_EGR_UG;
 			rCR1 = GTIM_CR1_CEN;
+
+			tone_next(); //start animation
+
 		} else if (new > tone_state.pattern) {
 			/* higher priority than the current alarm */
 			tone_state.pattern = new;
@@ -539,57 +592,98 @@ tone_write(struct file *filp, const char *buffer, size_t len)
 static void
 tone_next(void)
 {
-	const struct tone_note *np;
+//	const struct tone_note *np;
+//
+//	/* stop the current note */
+//	rCR1 = 0;
+//
+//	/* if we are no longer playing a pattern, we have nothing else to do here */
+//	if (tone_state.pattern == PATTERN_NONE) {
+//		return;
+//	}
+//
+//	/* if the current pattern has ended, clear the pattern and stop */
+//	if (tone_state.note == TONE_NOTE_MAX) {
+//		tone_state.pattern = PATTERN_NONE;
+//		return;
+//	}
+//
+//	/* find the note to play */
+//	if (tone_state.pattern == PATTERN_USER) {
+//		np = &tone_state.user_pattern[tone_state.note];
+//	} else {
+//		np = &patterns[tone_state.pattern - 1][tone_state.note];
+//	}
+//
+//	/* work out which note is next */
+//	tone_state.note++;
+//	if (tone_state.note >= TONE_NOTE_MAX) {
+//		/* hit the end of the pattern, stop */
+//		tone_state.pattern = PATTERN_NONE;
+//	} else if (np[1].duration == DURATION_END) {
+//		/* hit the end of the pattern, stop */
+//		tone_state.pattern = PATTERN_NONE;
+//	} else if (np[1].duration == DURATION_REPEAT) {
+//		/* next note is a repeat, rewind in preparation */
+//		tone_state.note = 0;
+//	}
+//
+//	/* set the timer to play the note, if required */
+//	if (np->pitch <= TONE_NOTE_SILENCE) {
+//
+//		/* set reload based on the pitch */
+//		rARR = notes[np->pitch];
+//
+//		/* force an update, reloads the counter and all registers */
+//		rEGR = GTIM_EGR_UG;
+//
+//		/* start the timer */
+//		rCR1 = GTIM_CR1_CEN;
+//	}
 
-	/* stop the current note */
-	rCR1 = 0;
+//	if (blue[0] == 255) dir = 0;
+//	if (blue[0] == 0) dir = 1;
+//
+//	if (dir)
+//		blue[0]++;
+//	else
+//		blue[0]--;
 
-	/* if we are no longer playing a pattern, we have nothing else to do here */
-	if (tone_state.pattern == PATTERN_NONE) {
-		return;
+
+	float s = dir++/360.f;
+
+	if(dir == 360) dir = 0;
+
+	float f, p, q, t;
+	s *= 6.f;
+	int in = (int)(floor(s));
+	f = s - in;
+
+	p = 0.f;
+	q = (float)(1.f - f);
+	t = (float)(1.f - (1.f - f));
+	float r,g,b;
+	switch(in)
+	{
+		case 0: r=1; g=t; b=p; break;
+		case 1: r=q; g=1; b=p; break;
+		case 2: r=p; g=1; b=t; break;
+		case 3: r=p; g=q; b=1; break;
+		case 4: r=t; g=p; b=1; break;
+		case 5: r=1; g=p; b=q; break;
+		default: r = 1; g = b = 0; break;
 	}
 
-	/* if the current pattern has ended, clear the pattern and stop */
-	if (tone_state.note == TONE_NOTE_MAX) {
-		tone_state.pattern = PATTERN_NONE;
-		return;
-	}
+	red[0] = fabs(r)*255.f;
+	green[0] = fabs(g)*255.f;
+	blue[0] = fabs(b)*255.f;
 
-	/* find the note to play */
-	if (tone_state.pattern == PATTERN_USER) {
-		np = &tone_state.user_pattern[tone_state.note];
-	} else {
-		np = &patterns[tone_state.pattern - 1][tone_state.note];
-	}
-
-	/* work out which note is next */
-	tone_state.note++;
-	if (tone_state.note >= TONE_NOTE_MAX) {
-		/* hit the end of the pattern, stop */
-		tone_state.pattern = PATTERN_NONE;
-	} else if (np[1].duration == DURATION_END) {
-		/* hit the end of the pattern, stop */
-		tone_state.pattern = PATTERN_NONE;
-	} else if (np[1].duration == DURATION_REPEAT) {
-		/* next note is a repeat, rewind in preparation */
-		tone_state.note = 0;
-	}
-
-	/* set the timer to play the note, if required */
-	if (np->pitch <= TONE_NOTE_SILENCE) {
-
-		/* set reload based on the pitch */
-		rARR = notes[np->pitch];
-
-		/* force an update, reloads the counter and all registers */
-		rEGR = GTIM_EGR_UG;
-
-		/* start the timer */
-		rCR1 = GTIM_CR1_CEN;
-	}
+	red[1] = fabs(g)*255.f;
+	green[1] = fabs(b)*255.f;
+	blue[1] = fabs(r)*255.f;
 
 	/* arrange a callback when the note/rest is done */
-	hrt_call_after(&tone_state.note_end, (hrt_abstime)10000 * np->duration, (hrt_callout)tone_next, NULL);
+	hrt_call_after(&tone_state.note_end, (hrt_abstime)20000, (hrt_callout)tone_next, NULL);
 }
 
 static bool
